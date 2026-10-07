@@ -1,0 +1,51 @@
+services:
+ - type: web
+   name: directus-kb
+   runtime: docker
+   dockerfilePath: ./Dockerfile
+   plan: free
+   envVars:
+     - key: DB_CLIENT
+       value: "pg"
+     - key: DB_SEARCH_PATH
+       value: "directus"
+     - key: DB_POOL_MIN
+       value: "0"
+     - key: ADMIN_EMAIL
+       value: "jyrac.directus@render.stki.org"
+     - key: PUBLIC_URL
+       value: "https://directus.jyrac.stki.org"
+     - key: AUTH_PROVIDERS
+       value: "casdoor"
+     - key: AUTH_CASDOOR_DRIVER
+       value: "openid"
+     - key: AUTH_CASDOOR_CLIENT_ID
+       value: "fdeb8a106bd6fdede008"
+     - key: AUTH_CASDOOR_ISSUER_URL
+       value: "https://auth.jyrac.stki.org/.well-known/openid-configuration"
+     - key: AUTH_CASDOOR_SCOPE
+       value: "openid profile email"
+     - key: AUTH_CASDOOR_ALLOW_PUBLIC_REGISTRATION
+       value: "true"
+     - key: AUTH_CASDOOR_DEFAULT_ROLE_ID
+       value: "33d8a058-81e0-4292-b58f-3ab9f3dcb84a"
+     - key: AUTH_CASDOOR_ICON
+       value: "account_circle"
+     - key: AUTH_CASDOOR_LABEL
+       value: "Casdoor"
+     - key: STORAGE_LOCATIONS
+       value: "gdrive"
+     - key: STORAGE_GDRIVE_DRIVER
+       value: "s3"
+     - key: STORAGE_GDRIVE_BUCKET
+       value: "directus-files"
+     - key: STORAGE_GDRIVE_ENDPOINT
+       value: "https://rclone.jyrac.stki.org"
+     - key: STORAGE_GDRIVE_REGION
+       value: "us-east-1"
+     - key: STORAGE_GDRIVE_FORCE_PATH_STYLE
+       value: "true"
+     - key: AWS_REQUEST_CHECKSUM_CALCULATION
+       value: "WHEN_REQUIRED"
+     - key: AWS_RESPONSE_CHECKSUM_VALIDATION
+       value: "WHEN_REQUIRED"
