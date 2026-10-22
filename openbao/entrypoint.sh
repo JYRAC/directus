@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+echo "[runtime] Node.js: $(node --version 2>/dev/null || echo unavailable)"
+
 if [ -z "$OPENBAO_WRAPPED_TOKEN" ]; then
   echo "OPENBAO_WRAPPED_TOKEN is not set" >&2
   exit 1
