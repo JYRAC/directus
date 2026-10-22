@@ -1,4 +1,4 @@
-FROM directus/directus:12.4.1
+FROM directus/directus:12.5.0
 
 USER root
 
