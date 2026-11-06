@@ -12,6 +12,9 @@ package main
 //   GATE_UPSTREAM               アプリの待ち受け先。既定 127.0.0.1:3457
 //   GATE_HEALTH_PATH            既定 /gate/healthz（IP制限の対象外。ゲート自身が応答）
 //   GATE_UPSTREAM_HEALTH_PATH   例 /server/ping。空ならポートへの接続だけを確認
+//   GATE_WAIT_READY_SEC         0 より大きいとき、アプリが応答するまで、公開ポートを開かない（最大この秒数）。
+//                               Render が「起動した」と判断して、古いインスタンスを止めるのを、アプリの準備が
+//                               できるまで遅らせる。既定 0（すぐに開く）
 //   GATE_HEALTH_REQUIRE_POLICY  1 のとき、許可リスト未読み込みでも healthz を 503 にする
 //   GATE_PUBLIC_RULES           IP制限の例外にする「公開の読み取り」のルール名（カンマ区切り。rules.go）
 //                               例 directus_news,directus_assets
@@ -40,6 +43,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -235,6 +239,27 @@ func (h *healthChecker) serve(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
 		_, _ = w.Write([]byte("ok"))
+	}
+}
+
+// waitUntilReady は、アプリが応答するまで待つ（最大 timeout）。時間切れでも戻る
+// （その場合は、ポートを開いて、/gate/healthz が 503 を返し、Watchdog が検知できるようにする）。
+func waitUntilReady(ctx context.Context, h *healthChecker, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for {
+		if h.probe() {
+			log.Printf("GATE_UPSTREAM_READY")
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Printf("GATE_UPSTREAM_NOT_READY timeout_s=%d listening anyway", int(timeout.Seconds()))
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
@@ -439,8 +464,14 @@ func main() {
 		MaxHeaderBytes:    1 << 16,
 	}
 
+	waitSec, _ := strconv.Atoi(os.Getenv("GATE_WAIT_READY_SEC"))
+
 	serverErr := make(chan error, 1)
 	go func() {
+		if waitSec > 0 {
+			log.Printf("GATE_WAITING_READY timeout_s=%d（アプリが応答するまで、公開ポートを開きません）", waitSec)
+			waitUntilReady(ctx, gate.health, time.Duration(waitSec)*time.Second)
+		}
 		log.Printf("GATE_LISTENING addr=0.0.0.0:%s", port)
 		serverErr <- server.ListenAndServe()
 	}()

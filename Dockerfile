@@ -14,7 +14,7 @@ RUN go mod init gate && \
     go mod tidy && \
     go build -trimpath -ldflags="-s -w" -o /out/gate .
 
-FROM directus/directus:12.6.0
+FROM directus/directus:12.5.1
 
 USER root
 
@@ -33,10 +33,13 @@ RUN chmod +x /app/gate
 
 # ゲートが起動するアプリ（Directus）。秘密ではないので、コードと一緒に版管理する。
 #   Directus は、ゲートの内側（127.0.0.1:3457）だけで待ち受ける。公開ポート（$PORT）はゲートが受ける。
-ENV GATE_CHILD_CMD='["/bin/sh","-c","node cli.js database migrate:latest && node cli.js start"]' \
+#   migrate は、コンテナごとに1回だけ（Agent が資格情報の更新で再起動するときは、省略して、起動を短くする）。
+#   GATE_WAIT_READY_SEC: Directus が応答するまで、ゲートは公開ポートを開かない（Render が、準備前に切り替えない）。
+ENV GATE_CHILD_CMD='["/bin/sh","-c","[ -f /tmp/.migrated ] || { node cli.js database migrate:latest && touch /tmp/.migrated || exit 1; }; exec node cli.js start"]' \
     GATE_CHILD_ENV='PORT=3457,HOST=127.0.0.1' \
     GATE_UPSTREAM=127.0.0.1:3457 \
-    GATE_UPSTREAM_HEALTH_PATH=/server/ping
+    GATE_UPSTREAM_HEALTH_PATH=/server/ping \
+    GATE_WAIT_READY_SEC=600
 
 COPY openbao/agent.hcl /etc/openbao/agent.hcl
 COPY openbao/entrypoint.sh /entrypoint.sh
