@@ -14,7 +14,7 @@ RUN go mod init gate && \
     go mod tidy && \
     go build -trimpath -ldflags="-s -w" -o /out/gate .
 
-FROM directus/directus:12.5.1
+FROM directus/directus:12.6.0
 
 USER root
 
