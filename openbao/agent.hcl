@@ -43,7 +43,18 @@ env_template "STORAGE_GDRIVE_SECRET" {
   contents = "{{ with secret \"kv/data/secrets/shared/rclone-gdrive\" }}{{ .Data.data.secret_key }}{{ end }}"
 }
 
+# ゲート専用の、読み取りだけのDB資格情報（Directus本体のロールとは別）。
+# GATE_ で始まる環境変数は、ゲートが Directus の子プロセスには渡さない。
+env_template "GATE_DB_USER" {
+  contents = "{{ with secret \"database/creds/gate-reader\" }}{{ .Data.username }}.kuajmlczxracqobxkzee{{ end }}"
+}
+
+env_template "GATE_DB_PASSWORD" {
+  contents = "{{ with secret \"database/creds/gate-reader\" }}{{ .Data.password }}{{ end }}"
+}
+
+# Directus本体（migrate して start）は、ゲートが起動する（Dockerfile の GATE_CHILD_CMD）。
 exec {
-  command                   = ["/bin/sh", "-c", "node cli.js database migrate:latest && node cli.js start"]
+  command                   = ["/app/gate"]
   restart_on_secret_changes = "always"
 }
