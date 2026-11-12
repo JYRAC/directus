@@ -14,6 +14,15 @@ RUN go mod init gate && \
     go mod tidy && \
     go build -trimpath -ldflags="-s -w" -o /out/gate .
 
+# NetBird クライアントを取得
+FROM alpine:3.24 AS netbird-download
+ARG NETBIRD_VERSION=0.81.5
+RUN apk add --no-cache curl && \
+    curl -fsSL -o /tmp/netbird.tar.gz \
+      "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" && \
+    mkdir -p /tmp/netbird-bin && \
+    tar -xzf /tmp/netbird.tar.gz -C /tmp/netbird-bin netbird
+
 FROM directus/directus:12.6.1
 
 USER root
@@ -28,8 +37,15 @@ RUN apk add --no-cache curl && \
     chmod +x /usr/local/bin/bao && \
     rm -rf /tmp/bao.tar.gz /tmp/bao-extract
 
+COPY --from=netbird-download /tmp/netbird-bin/netbird /usr/local/bin/netbird
 COPY --from=gate-build /out/gate /app/gate
-RUN chmod +x /app/gate
+
+# NetBird は非 root（node）で動かす。状態ファイルの置き場を、node が書けるようにしておく。
+# NetBird の実行確認もここで行う。
+RUN mkdir -p /var/lib/netbird /var/log/netbird && \
+    chown node:node /var/lib/netbird /var/log/netbird && \
+    chmod +x /usr/local/bin/netbird /app/gate && \
+    /usr/local/bin/netbird version
 
 # ゲートが起動するアプリ（Directus）。秘密ではないので、コードと一緒に版管理する。
 #   Directus は、ゲートの内側（127.0.0.1:3457）だけで待ち受ける。公開ポート（$PORT）はゲートが受ける。
@@ -41,9 +57,12 @@ ENV GATE_CHILD_CMD='["/bin/sh","-c","[ -f /tmp/.migrated ] || { node cli.js data
     GATE_UPSTREAM_HEALTH_PATH=/server/ping \
     GATE_WAIT_READY_SEC=600
 
+# OpenBao の NetBird 向け証明書
+COPY openbao/ca.crt /etc/openbao/ca.crt
 COPY openbao/agent.hcl /etc/openbao/agent.hcl
 COPY openbao/entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+COPY openbao/netbird-up.sh /netbird-up.sh
+RUN sed -i 's/\r$//' /entrypoint.sh /netbird-up.sh && chmod +x /entrypoint.sh /netbird-up.sh
 
 USER node
 
