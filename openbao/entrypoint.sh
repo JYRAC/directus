@@ -37,8 +37,10 @@ use_netbird() {
   VIA=netbird
 }
 
+NB_OK=0
 if [ -n "$NB_ADDR" ] && [ -n "${NB_SETUP_KEY:-}" ]; then
   if /netbird-up.sh; then
+    NB_OK=1
     use_netbird
   else
     echo "NB: NetBird に接続できませんでした。公開側の OpenBao に接続します（移行中の、一時的な代替）" >&2
@@ -47,6 +49,19 @@ fi
 # キーは、もう使わない。アプリ側の環境に残さない。
 unset NB_SETUP_KEY
 [ -n "$VIA" ] || use_public
+
+# rclone（S3）へは、NetBird 経由でだけ出る（rclone の公開側は閉じた）。Directus の S3 ドライバは SOCKS5 を話せないので、
+# 127.0.0.1 の小さな転送（netbird-forward.js）で受けて、NetBird の SOCKS5 に流す。
+# 全体を SOCKS5 に流すわけではない（Casdoor や Supabase への通信は、そのまま）。
+# 転送は、つながるたびに宛先へ出るので、rclone の起動が遅れても、待たずに起動する。届くかどうかは、ログにだけ出す。
+if [ "$NB_OK" = 1 ] && [ -n "${RCLONE_NB_ADDR:-}" ]; then
+  node /netbird-forward.js &
+  export STORAGE_GDRIVE_ENDPOINT="http://127.0.0.1:${RCLONE_LOCAL_PORT:-9000}"
+  ( node /netbird-forward.js --check >&2 || echo "NB: rclone に NetBird 経由で届きません。ファイルの保存、取得ができません" >&2 ) &
+  echo "RCLONE_VIA=netbird endpoint=$STORAGE_GDRIVE_ENDPOINT"
+else
+  echo "NB: NetBird に接続できないか、RCLONE_NB_ADDR が空です。rclone に届かないので、ファイルの保存、取得ができません" >&2
+fi
 
 unwrap() {
   bao unwrap -field=token "$OPENBAO_WRAPPED_TOKEN" 2>/tmp/unwrap.err

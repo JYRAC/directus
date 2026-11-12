@@ -62,6 +62,9 @@ COPY openbao/ca.crt /etc/openbao/ca.crt
 COPY openbao/agent.hcl /etc/openbao/agent.hcl
 COPY openbao/entrypoint.sh /entrypoint.sh
 COPY openbao/netbird-up.sh /netbird-up.sh
+# rclone の証明書（公開情報）。netbird-forward.js が、rclone との TLS を、この証明書だけに固定する
+COPY openbao/rclone-ca.crt /etc/openbao/rclone-ca.crt
+COPY openbao/netbird-forward.js /netbird-forward.js
 RUN sed -i 's/\r$//' /entrypoint.sh /netbird-up.sh && chmod +x /entrypoint.sh /netbird-up.sh
 
 USER node

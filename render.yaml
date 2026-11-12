@@ -39,8 +39,9 @@ services:
        value: "s3"
      - key: STORAGE_GDRIVE_BUCKET
        value: "directus-files"
+     # rclone の公開側は閉じた。NetBird 経由の転送（netbird-forward.js）に向ける（entrypoint.sh も、同じ値で上書きする）
      - key: STORAGE_GDRIVE_ENDPOINT
-       value: "https://rclone.jyrac.stki.org"
+       value: "http://127.0.0.1:9000"
      - key: STORAGE_GDRIVE_REGION
        value: "us-east-1"
      - key: STORAGE_GDRIVE_FORCE_PATH_STYLE
@@ -80,4 +81,8 @@ services:
      - key: NB_HOSTNAME
        value: "directus"
      - key: OPENBAO_NB_ADDR
-       value: "https://100.125.124.43:8210"
+       value: "https://100.125.124.43:8210"   # ← OpenBao の NetBird の IP に書き換える（名前では引けない）
+     # rclone への NetBird 経由の接続先（rclone の NetBird の IP:8210。IPv4 のみ、名前は引けない）。
+     # 空だと、rclone に届かず、ファイルの保存、取得ができない（公開側は閉じた）。
+     - key: RCLONE_NB_ADDR
+       value: "100.125.61.26:8210"
