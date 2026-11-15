@@ -17,12 +17,23 @@ services:
        value: "https://directus.jyrac.stki.org"
      - key: AUTH_PROVIDERS
        value: "casdoor"
+     # oauth2 ドライバ：サーバー側の通信（ACCESS_URL / PROFILE_URL）だけを、NetBird 経由の内部口に向けるため。
+     # ACCESS_URL / PROFILE_URL は、entrypoint.sh が設定する（転送が使えれば 127.0.0.1、使えなければ公開側）。
+     # 戻すとき（ロールバック）は、DRIVER=openid、ISSUER_URL を戻す。
      - key: AUTH_CASDOOR_DRIVER
-       value: "openid"
+       value: "oauth2"
      - key: AUTH_CASDOOR_CLIENT_ID
        value: "fdeb8a106bd6fdede008"
-     - key: AUTH_CASDOOR_ISSUER_URL
-       value: "https://auth.jyrac.stki.org/.well-known/openid-configuration"
+     - key: AUTH_CASDOOR_AUTHORIZE_URL
+       value: "https://auth.jyrac.stki.org/login/oauth/authorize"   # ブラウザが開く。公開のまま
+     - key: AUTH_CASDOOR_IDENTIFIER_KEY
+       value: "sub"   # 今までの openid と同じ識別子（既存ユーザーを引き継ぐ）。email にしない
+     - key: AUTH_CASDOOR_EMAIL_KEY
+       value: "email"
+     - key: AUTH_CASDOOR_FIRST_NAME_KEY
+       value: "given_name"
+     - key: AUTH_CASDOOR_LAST_NAME_KEY
+       value: "family_name"
      - key: AUTH_CASDOOR_SCOPE
        value: "openid profile email"
      - key: AUTH_CASDOOR_ALLOW_PUBLIC_REGISTRATION
@@ -86,3 +97,7 @@ services:
      # 空だと、rclone に届かず、ファイルの保存、取得ができない（公開側は閉じた）。
      - key: RCLONE_NB_ADDR
        value: "100.125.61.26:8210"
+     # Casdoor の内部口 A（固定ピアの NetBird の IP:8443）。サーバー側の SSO 通信が、ここを通る。
+     # 空だと公開側につなぐ（C6 の前の、一時的な代替）。
+     - key: CASDOOR_NB_ADDR
+       value: "100.125.23.8:8443"

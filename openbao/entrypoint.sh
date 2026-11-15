@@ -52,7 +52,7 @@ unset NB_SETUP_KEY
 
 # rclone（S3）へは、NetBird 経由でだけ出る（rclone の公開側は閉じた）。Directus の S3 ドライバは SOCKS5 を話せないので、
 # 127.0.0.1 の小さな転送（netbird-forward.js）で受けて、NetBird の SOCKS5 に流す。
-# 全体を SOCKS5 に流すわけではない（Casdoor や Supabase への通信は、そのまま）。
+# 全体を SOCKS5 に流すわけではない（Supabase などへの通信は、そのまま）。
 # 転送は、つながるたびに宛先へ出るので、rclone の起動が遅れても、待たずに起動する。届くかどうかは、ログにだけ出す。
 if [ "$NB_OK" = 1 ] && [ -n "${RCLONE_NB_ADDR:-}" ]; then
   node /netbird-forward.js &
@@ -62,6 +62,30 @@ if [ "$NB_OK" = 1 ] && [ -n "${RCLONE_NB_ADDR:-}" ]; then
 else
   echo "NB: NetBird に接続できないか、RCLONE_NB_ADDR が空です。rclone に届かないので、ファイルの保存、取得ができません" >&2
 fi
+
+# Casdoor（SSO）への、サーバー側の通信（トークンの交換と、ユーザー情報の取得）は、NetBird 経由で、Casdoor の内部口 A に出す。
+#   CASDOOR_NB_ADDR  内部口 A の、NetBird の IP:ポート（Casdoor の固定ピアの IP:8443。IPv4 のみ。名前は引けない）
+# Directus の OAuth2 ドライバは SOCKS5 を話せないので、netbird-forward.js（--name=casdoor）で受ける。
+# 127.0.0.1 の間は平文で、NetBird の上は TLS 1.3。Casdoor の証明書は、/etc/openbao/ca.crt（ルート入りのバンドル）で、
+# 名前 auth.jyrac.stki.org として検証する（検証は、切らない）。
+# ブラウザが開く認可の URL（AUTH_CASDOOR_AUTHORIZE_URL）は、公開の URL のまま（利用者の通信なので、内部口を通さない）。
+# 転送が使えるときだけ、ACCESS_URL と PROFILE_URL を、転送に向ける。使えないとき（NetBird に出られない、または
+# CASDOOR_NB_ADDR が空）は、公開側に向ける（移行中の、一時的な代替。公開側を閉じたら、不要）。
+# いずれも AUTH_CASDOOR_DRIVER=oauth2 のときだけ使われる（openid のときは、無視される）。
+CASDOOR_PUBLIC="${CASDOOR_PUBLIC_URL:-https://auth.jyrac.stki.org}"
+if [ "$NB_OK" = 1 ] && [ -n "${CASDOOR_NB_ADDR:-}" ]; then
+  node /netbird-forward.js --name=casdoor &
+  ( node /netbird-forward.js --name=casdoor --check >&2 || echo "NB: Casdoor の内部口に NetBird 経由で届きません。SSO のログインができません" >&2 ) &
+  CASDOOR_EP="http://127.0.0.1:${CASDOOR_LOCAL_PORT:-9001}"
+  CASDOOR_VIA=netbird
+else
+  CASDOOR_EP="$CASDOOR_PUBLIC"
+  CASDOOR_VIA=public
+  echo "NB: Casdoor へは、公開側でつなぎます（NetBird に出られないか、CASDOOR_NB_ADDR が空です）" >&2
+fi
+export AUTH_CASDOOR_ACCESS_URL="$CASDOOR_EP/api/login/oauth/access_token"
+export AUTH_CASDOOR_PROFILE_URL="$CASDOOR_EP/api/userinfo"
+echo "CASDOOR_VIA=$CASDOOR_VIA endpoint=$CASDOOR_EP"
 
 unwrap() {
   bao unwrap -field=token "$OPENBAO_WRAPPED_TOKEN" 2>/tmp/unwrap.err
