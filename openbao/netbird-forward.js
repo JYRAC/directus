@@ -16,12 +16,20 @@
 //   Directus との間（127.0.0.1）は平文で、宛先との間（NetBird の上）は、TLS 1.3 で、この証明書に固定する。
 //   宛先の証明書の検証は、切らない（--name ごとの CA と名前で、必ず検証する）。
 //
+//   casdoor だけは、HTTP を解釈する中継にする（rclone は、バイトをそのまま流す）:
+//     - 通すのは、POST /api/login/oauth/access_token と GET /api/userinfo だけ（Casdoor の内部口 A の許可と同じ。他は 403）
+//     - Host は、TLS_NAME に固定する
+//     - トークンの応答の JSON から、id_token を除く。Directus の OAuth2 ドライバ（openid-client の oauthCallback）は、
+//       id_token が応答にあると、エラーにする（Casdoor は、常に id_token を返す）。この経路では、id_token は、
+//       検証に使わない（ユーザーは、userinfo の sub で特定する）ので、除いても、検証は弱まらない。
+//
 //   --check  宛先に届くまで待つ（最大 NB_CHECK_SEC 秒、既定 40）。届けば 0、届かなければ 1 で終わる。
 //   （--check なし）  待ち受けを始める。
 'use strict';
 const net = require('net');
 const tls = require('tls');
 const fs = require('fs');
+const http = require('http');
 
 const DEFAULTS = {
   RCLONE: { port: 9000, ca: '/etc/openbao/rclone-ca.crt', name: 'rclone.netbird.cloud' },
@@ -133,7 +141,62 @@ async function check() {
   return 1;
 }
 
+// ---- casdoor 用: HTTP を解釈する中継 ----
+const HTTP_MODE = NAME === 'CASDOOR';
+const HTTP_ALLOW = new Set(['POST /api/login/oauth/access_token', 'GET /api/userinfo']);
+const TOKEN_PATH = '/api/login/oauth/access_token';
+
+// 1 本ずつ、NetBird 経由の TLS をつなぐ Agent（keepAlive なし）。createConnection は、コールバック形式で非同期に返せる。
+class NbAgent extends http.Agent {
+  createConnection(_opts, cb) { connectTls().then((s) => cb(null, s), (e) => cb(e)); }
+}
+const nbAgent = new NbAgent({ keepAlive: false });
+
+function serveHttp() {
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    if (!HTTP_ALLOW.has(`${req.method} ${u.pathname}`)) {
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      return res.end('forbidden');
+    }
+    const headers = { ...req.headers, host: TLS_NAME, connection: 'close' };
+    delete headers['accept-encoding']; // 応答を、平文の JSON で受ける
+    const up = http.request({
+      method: req.method, path: req.url, headers, agent: nbAgent,
+    }, (ur) => {
+      const chunks = [];
+      ur.on('data', (d) => chunks.push(d));
+      ur.on('end', () => {
+        let body = Buffer.concat(chunks);
+        const h = { ...ur.headers };
+        delete h['transfer-encoding']; delete h.connection;
+        if (u.pathname === TOKEN_PATH && /json/i.test(String(h['content-type'] || ''))) {
+          try {
+            const j = JSON.parse(body.toString('utf8'));
+            if (j && typeof j === 'object' && 'id_token' in j) {
+              delete j.id_token;
+              body = Buffer.from(JSON.stringify(j));
+            }
+          } catch (_) { /* JSON でなければ、そのまま */ }
+        }
+        h['content-length'] = String(body.length);
+        res.writeHead(ur.statusCode, h);
+        res.end(body);
+      });
+    });
+    up.on('error', (e) => {
+      console.error(`${TAG}: 宛先への接続に失敗: ${e.message}`);
+      if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
+      res.end('bad gateway');
+    });
+    req.pipe(up);
+  });
+  srv.on('error', (e) => { console.error(`${TAG}: 待ち受けに失敗しました: ${e.message}`); process.exit(1); });
+  srv.listen(LOCAL_PORT, '127.0.0.1', () => console.log(`${TAG}: 127.0.0.1:${LOCAL_PORT} -> ${TARGET} (HTTP 中継, SOCKS5 ${SOCKS_HOST}:${SOCKS_PORT}, TLS 名 ${TLS_NAME})`));
+}
+
 function serve() {
+  if (HTTP_MODE) return serveHttp();
   const srv = net.createServer((c) => {
     c.pause();
     connectTls().then((up) => {
