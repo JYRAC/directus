@@ -6,10 +6,14 @@
 //   転送先は、--name で選ぶ（既定 rclone）。--name ごとに、次の環境変数を読む（名前は大文字）:
 //     <NAME>_NB_ADDR     宛先。NetBird の IP:ポート（IPv4 のみ。名前は引けない）。例 100.74.1.2:8210
 //     <NAME>_LOCAL_PORT  待ち受けるポート（127.0.0.1）
-//     <NAME>_TLS_CA      宛先の証明書（これだけを信頼する）。バンドル（複数枚）でもよい
+//     <NAME>_TLS_CA      宛先の証明書（これだけを信頼する）。バンドル（複数枚）でもよい。
+//                        ファイルを複数、並べるときは、カンマで区切る（中身は、つなげて、1つの信頼の集まりにする）
 //     <NAME>_TLS_NAME    証明書の名前（SNI と照合）
 //   既定値:
-//     rclone   ポート 9000、CA /etc/openbao/rclone-ca.crt、名前 rclone.netbird.cloud
+//     rclone   ポート 9000、名前 rclone.netbird.cloud
+//              CA は、2つ並べる: /etc/openbao/ca.crt（ルート入りのバンドル。rclone が PKI から発行した証明書を、ルートで検証する）と、
+//              /etc/openbao/rclone-ca.crt（今までの自己署名。rclone が PKI から発行できず、kv の証明書に戻ったときの、戻り先）。
+//              どちらも、rclone 宛ての接続にしか使わない。戻り先が、要らなくなったら、rclone-ca.crt を外す
 //     casdoor  ポート 9001、CA /etc/openbao/ca.crt（ルート入りのバンドル）、名前 auth.jyrac.stki.org
 //   共通: NB_SOCKS5_ADDR  NetBird の SOCKS5。既定 127.0.0.1:1080
 //
@@ -32,7 +36,7 @@ const fs = require('fs');
 const http = require('http');
 
 const DEFAULTS = {
-  RCLONE: { port: 9000, ca: '/etc/openbao/rclone-ca.crt', name: 'rclone.netbird.cloud' },
+  RCLONE: { port: 9000, ca: '/etc/openbao/ca.crt,/etc/openbao/rclone-ca.crt', name: 'rclone.netbird.cloud' },
   CASDOOR: { port: 9001, ca: '/etc/openbao/ca.crt', name: 'auth.jyrac.stki.org' },
 };
 const nameArg = process.argv.find((a) => a.startsWith('--name='));
@@ -54,7 +58,10 @@ const TLS_NAME = env('TLS_NAME') || D.name;
 const TLS_CA_PATH = env('TLS_CA') || D.ca;
 let TLS_CA;
 try {
-  TLS_CA = fs.readFileSync(TLS_CA_PATH);
+  // カンマで区切られた、複数のファイルを、つなげる（1つ読めなければ、止まる。信頼する相手を、黙って減らさない）
+  TLS_CA = Buffer.concat(
+    TLS_CA_PATH.split(',').map((p) => p.trim()).filter(Boolean).map((p) => Buffer.concat([fs.readFileSync(p), Buffer.from('\n')])),
+  );
 } catch (e) {
   console.error(`${TAG}: 証明書を読めません (${TLS_CA_PATH}): ${e.message}`);
   process.exit(2);
