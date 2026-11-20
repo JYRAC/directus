@@ -23,7 +23,7 @@ RUN apk add --no-cache curl && \
     mkdir -p /tmp/netbird-bin && \
     tar -xzf /tmp/netbird.tar.gz -C /tmp/netbird-bin netbird
 
-FROM directus/directus:12.6.1
+FROM directus/directus:12.7.0
 
 USER root
 
