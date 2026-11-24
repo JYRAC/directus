@@ -27,7 +27,7 @@ FROM directus/directus:12.7.0
 
 USER root
 
-ARG BAO_VERSION=2.7.2
+ARG BAO_VERSION=2.7.3
 RUN apk add --no-cache curl && \
     curl -fsSL -o /tmp/bao.tar.gz \
       "https://github.com/openbao/openbao/releases/download/v${BAO_VERSION}/openbao_${BAO_VERSION}_linux_amd64.tar.gz" && \
